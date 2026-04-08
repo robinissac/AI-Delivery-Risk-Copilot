@@ -1,15 +1,13 @@
- from pathlib import Path
-
-clean_code = r'''"""
+ """
 AI Delivery Risk Copilot - Version 2
 Improved version with validation, logging, docstrings, and better error handling.
 """
 
+import os
 import json
 import logging
-import os
 from datetime import datetime, date
-from typing import Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import streamlit as st
 
@@ -65,24 +63,27 @@ TESTING_OPTIONS = ["Yes", "No"]
 # ============================================================================
 
 
-def validate_project_data(data: dict[str, Any]) -> tuple[bool, str]:
+def validate_project_data(data: Dict[str, Any]) -> Tuple[bool, str]:
     """
     Validate input data before processing.
 
     Args:
-        data: Input data dictionary containing project metrics.
+        data: Input data dictionary containing project metrics
 
     Returns:
-        Tuple of (is_valid, error_message).
+        tuple: (is_valid, error_message)
     """
     try:
-        if not data.get("project_name", "").strip():
+        project_name = str(data.get("project_name", "")).strip()
+        if not project_name:
             return False, "Project name cannot be empty"
 
-        if not (0 <= data.get("progress", 0) <= 100):
+        progress = int(data.get("progress", 0))
+        if not (0 <= progress <= 100):
             return False, "Progress must be between 0 and 100"
 
-        if data.get("budget_utilization", 0) < 0:
+        budget_utilization = int(data.get("budget_utilization", 0))
+        if budget_utilization < 0:
             return False, "Budget utilization cannot be negative"
 
         if data.get("domain") not in DOMAINS:
@@ -94,28 +95,29 @@ def validate_project_data(data: dict[str, Any]) -> tuple[bool, str]:
         if data.get("testing_readiness") not in TESTING_OPTIONS:
             return False, f"Testing readiness must be one of {TESTING_OPTIONS}"
 
-        if not (0 <= data.get("risks_count", 0) <= 50):
+        risks_count = int(data.get("risks_count", 0))
+        blockers_count = int(data.get("blockers_count", 0))
+        scope_changes = int(data.get("scope_changes", 0))
+
+        if not (0 <= risks_count <= 50):
             return False, "Risks count must be between 0 and 50"
 
-        if not (0 <= data.get("blockers_count", 0) <= 50):
+        if not (0 <= blockers_count <= 50):
             return False, "Blockers count must be between 0 and 50"
 
-        if not (0 <= data.get("scope_changes", 0) <= 50):
+        if not (0 <= scope_changes <= 50):
             return False, "Scope changes must be between 0 and 50"
 
         go_live_raw = data.get("go_live_date")
-        if not go_live_raw:
-            return False, "Go-live date is required"
-
         go_live = datetime.fromisoformat(str(go_live_raw)).date()
-        if go_live < date.today():
+        if go_live < datetime.now().date():
             return False, "Go-live date cannot be in the past"
 
         logger.info("All input validation passed")
         return True, ""
 
-    except Exception as exc:
-        error_msg = f"Validation error: {exc}"
+    except Exception as e:
+        error_msg = f"Validation error: {str(e)}"
         logger.error(error_msg)
         return False, error_msg
 
@@ -133,70 +135,117 @@ def score_risk(
     scope_changes: int,
     testing_ready: str,
     stakeholder_status: str,
-    thresholds: dict[str, int] | None = None,
+    thresholds: Optional[Dict[str, int]] = None,
 ) -> int:
     """
     Calculate delivery risk score based on project metrics.
+
+    Uses a weighted scoring model where higher scores indicate higher risk.
     """
     if thresholds is None:
         thresholds = RISK_THRESHOLDS
 
     score = 0
 
+    # Progress scoring
     if progress < thresholds["progress_critical"]:
         score += 2
-        logger.debug("Progress %s%% is critical", progress)
+        logger.debug(
+            "Progress %s%% is critical (<%s%%)",
+            progress,
+            thresholds["progress_critical"],
+        )
     elif progress < thresholds["progress_warning"]:
         score += 1
-        logger.debug("Progress %s%% is warning", progress)
+        logger.debug(
+            "Progress %s%% is warning (<%s%%)",
+            progress,
+            thresholds["progress_warning"],
+        )
 
+    # Budget scoring
     if budget_util > thresholds["budget_critical"]:
         score += 2
-        logger.debug("Budget %s%% is critical", budget_util)
+        logger.debug(
+            "Budget %s%% is critical (>%s%%)",
+            budget_util,
+            thresholds["budget_critical"],
+        )
     elif budget_util > thresholds["budget_warning"]:
         score += 1
-        logger.debug("Budget %s%% is warning", budget_util)
+        logger.debug(
+            "Budget %s%% is warning (>%s%%)",
+            budget_util,
+            thresholds["budget_warning"],
+        )
 
+    # Risks scoring
     if risks_count >= thresholds["risks_critical"]:
         score += 2
-        logger.debug("Risks count %s is critical", risks_count)
+        logger.debug(
+            "Risks count %s is critical (>=%s)",
+            risks_count,
+            thresholds["risks_critical"],
+        )
     elif risks_count >= thresholds["risks_warning"]:
         score += 1
-        logger.debug("Risks count %s is warning", risks_count)
+        logger.debug(
+            "Risks count %s is warning (>=%s)",
+            risks_count,
+            thresholds["risks_warning"],
+        )
 
+    # Blockers scoring
     if blockers_count >= thresholds["blockers_critical"]:
         score += 2
-        logger.debug("Blockers count %s is critical", blockers_count)
+        logger.debug(
+            "Blockers %s is critical (>=%s)",
+            blockers_count,
+            thresholds["blockers_critical"],
+        )
     elif blockers_count >= thresholds["blockers_warning"]:
         score += 1
-        logger.debug("Blockers count %s is warning", blockers_count)
+        logger.debug(
+            "Blockers %s is warning (>=%s)",
+            blockers_count,
+            thresholds["blockers_warning"],
+        )
 
+    # Scope changes scoring
     if scope_changes >= thresholds["scope_changes_critical"]:
         score += 2
-        logger.debug("Scope changes %s is critical", scope_changes)
+        logger.debug(
+            "Scope changes %s is critical (>=%s)",
+            scope_changes,
+            thresholds["scope_changes_critical"],
+        )
     elif scope_changes >= thresholds["scope_changes_warning"]:
         score += 1
-        logger.debug("Scope changes %s is warning", scope_changes)
+        logger.debug(
+            "Scope changes %s is warning (>=%s)",
+            scope_changes,
+            thresholds["scope_changes_warning"],
+        )
 
+    # Testing readiness scoring
     if testing_ready == "No":
         score += 1
-        logger.debug("Testing readiness is No")
+        logger.debug("Testing readiness is 'No', risk added")
 
+    # Stakeholder status scoring
     if stakeholder_status == "Red":
         score += 2
-        logger.debug("Stakeholder status is Red")
+        logger.debug("Stakeholder status is Red, high risk")
     elif stakeholder_status == "Amber":
         score += 1
-        logger.debug("Stakeholder status is Amber")
+        logger.debug("Stakeholder status is Amber, moderate risk")
 
     logger.info("Risk score calculated: %s", score)
     return score
 
 
 def band(score: int) -> str:
-    """
-    Convert risk score to risk band.
-    """
+    """Convert risk score to risk band."""
     if score >= RISK_BANDS["high"]:
         return "High"
     if score >= RISK_BANDS["medium"]:
@@ -204,30 +253,28 @@ def band(score: int) -> str:
     return "Low"
 
 
-def recommendation(score: int) -> list[str]:
-    """
-    Generate recommended actions based on risk score.
-    """
+def recommendation(score: int) -> List[str]:
+    """Generate recommended actions based on risk score."""
     if score >= RISK_BANDS["high"]:
         actions = [
-            "Run an executive risk review within 24 hours",
-            "Freeze non-critical scope changes",
-            "Assign owners and due dates for top 3 blockers",
-            "Issue a decision paper with options, impacts, and recommendation",
+            "🔴 Run an executive risk review within 24 hours",
+            "🔴 Freeze non-critical scope changes",
+            "🔴 Assign owners and due dates for top 3 blockers",
+            "🔴 Issue a decision paper with options, impacts, and recommendation",
         ]
     elif score >= RISK_BANDS["medium"]:
         actions = [
-            "Increase governance cadence to twice weekly",
-            "Re-baseline milestone dates and dependencies",
-            "Convert open issues into action-owned mitigation items",
-            "Validate testing readiness and cutover criteria",
+            "🟡 Increase governance cadence to twice weekly",
+            "🟡 Re-baseline milestone dates and dependencies",
+            "🟡 Convert open issues into action-owned mitigation items",
+            "🟡 Validate testing readiness and cutover criteria",
         ]
     else:
         actions = [
-            "Maintain weekly governance",
-            "Continue proactive RAID tracking",
-            "Confirm milestone readiness with delivery leads",
-            "Keep stakeholder communication concise and data-driven",
+            "🟢 Maintain weekly governance",
+            "🟢 Continue proactive RAID tracking",
+            "🟢 Confirm milestone readiness with delivery leads",
+            "🟢 Keep stakeholder communication concise and data-driven",
         ]
 
     logger.info("Generated %s recommendations for score %s", len(actions), score)
@@ -248,9 +295,7 @@ def build_exec_summary(
     go_live_date: str,
     top_risk: str,
 ) -> str:
-    """
-    Generate executive summary for CXO stakeholders.
-    """
+    """Generate executive summary for CXO stakeholders."""
     summary = f"""
 Project: {project_name}
 Domain: {domain}
@@ -271,8 +316,8 @@ Recommended next step is to drive a leadership review on top delivery risks and 
 def build_raid_items(
     risks_text: str,
     blockers_text: str,
-    team_members: list[str] | None = None,
-) -> list[dict[str, str]]:
+    team_members: Optional[List[str]] = None,
+) -> List[Dict[str, str]]:
     """
     Generate RAID register items from risks and blockers.
     """
@@ -286,8 +331,9 @@ def build_raid_items(
     if team_members is None:
         team_members = ["TBD"] * 6
 
-    raid: list[dict[str, str]] = []
+    raid: List[Dict[str, str]] = []
 
+    # Add risk items
     for i, item in enumerate(risk_items[:3], start=1):
         owner = team_members[i - 1] if i - 1 < len(team_members) else "TBD"
         raid.append(
@@ -301,9 +347,10 @@ def build_raid_items(
             }
         )
 
+    # Add blocker items
     for i, item in enumerate(blocker_items[:3], start=1):
-        idx = 3 + i - 1
-        owner = team_members[idx] if idx < len(team_members) else "TBD"
+        owner_index = 3 + i - 1
+        owner = team_members[owner_index] if owner_index < len(team_members) else "TBD"
         raid.append(
             {
                 "type": "Issue",
@@ -330,9 +377,9 @@ def build_raid_items(
 
 
 def generate_local_analysis(
-    data: dict[str, Any],
-    thresholds: dict[str, int] | None = None,
-) -> dict[str, Any]:
+    data: Dict[str, Any],
+    thresholds: Optional[Dict[str, int]] = None,
+) -> Dict[str, Any]:
     """
     Generate complete local analysis without LLM.
     """
@@ -358,11 +405,9 @@ def generate_local_analysis(
 
     risk_band = band(risk_score)
     actions = recommendation(risk_score)
-    top_risk = (
-        data["top_risk"].strip()
-        if data["top_risk"].strip()
-        else "Dependency and schedule slippage"
-    )
+
+    top_risk_value = str(data.get("top_risk", "")).strip()
+    top_risk = top_risk_value if top_risk_value else "Dependency and schedule slippage"
 
     summary = build_exec_summary(
         data["project_name"],
@@ -394,15 +439,31 @@ def generate_local_analysis(
 # ============================================================================
 
 
+def _extract_json_from_response(content: str) -> Dict[str, Any]:
+    """
+    Safely parse model output that may be raw JSON or wrapped in markdown fences.
+    """
+    cleaned = content.strip()
+
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+
+    return json.loads(cleaned)
+
+
 def call_openai_if_configured(
-    data: dict[str, Any],
-    local_result: dict[str, Any],
-) -> dict[str, Any] | None:
+    data: Dict[str, Any],
+    local_result: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
     """
     Call OpenAI API if configured via environment variables.
 
-    Requires OPENAI_API_KEY.
-    Optional MODEL_NAME defaults to gpt-4o-mini.
+    Returns:
+        dict on success
+        None if API key not configured
+        dict with 'error' key if API call fails
     """
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     model = os.getenv("MODEL_NAME", "gpt-4o-mini").strip()
@@ -441,7 +502,7 @@ Rules:
 - Do not invent metrics not present in the input.
 - Mention operational continuity if relevant.
 - Return valid JSON only.
-"""
+""".strip()
 
         response = client.chat.completions.create(
             model=model,
@@ -450,26 +511,29 @@ Rules:
                     "role": "system",
                     "content": "You are a concise enterprise delivery advisor. Always respond with valid JSON.",
                 },
-                {"role": "user", "content": prompt},
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
             ],
             temperature=0.2,
             max_tokens=1000,
         )
 
         content = response.choices[0].message.content or "{}"
-        result = json.loads(content)
+        result = _extract_json_from_response(content)
         logger.info("LLM call successful")
         return result
 
     except ImportError:
         logger.error("OpenAI library not installed. Run: pip install openai")
         return {"error": "OpenAI library not installed. Install with: pip install openai"}
-    except json.JSONDecodeError as exc:
-        logger.error("LLM response was not valid JSON: %s", exc)
-        return {"error": f"LLM response parsing failed: {exc}"}
-    except Exception as exc:
-        logger.error("LLM API call failed: %s", exc)
-        return {"error": str(exc)}
+    except json.JSONDecodeError as e:
+        logger.error("LLM response was not valid JSON: %s", e)
+        return {"error": f"LLM response parsing failed: {str(e)}"}
+    except Exception as e:
+        logger.error("LLM API call failed: %s", e)
+        return {"error": str(e)}
 
 
 # ============================================================================
@@ -478,9 +542,8 @@ Rules:
 
 
 def main() -> None:
-    """
-    Main Streamlit application entry point.
-    """
+    """Main Streamlit application entry point."""
+
     st.set_page_config(
         page_title="AI Delivery Risk Copilot",
         page_icon="📈",
@@ -492,27 +555,27 @@ def main() -> None:
     st.caption("Interview-ready demo for Senior Delivery Manager roles, v2 enhanced")
 
     with st.sidebar:
-        st.header("About this app")
+        st.header("ℹ️ About this app")
         st.write(
-            "This app simulates how a Senior Delivery Manager can turn raw project signals "
-            "into an executive summary, risk view, and action plan."
+            "This app simulates how an SDM (Senior Delivery Manager) can use AI to turn raw "
+            "project signals into an executive summary, risk view, and action plan."
         )
         st.write("**Features:**")
-        st.write("- Works locally without an API key")
-        st.write("- Optional LLM enhancement with OpenAI")
-        st.write("- Input validation and error handling")
-        st.write("- Configurable risk thresholds")
-        st.write("- RAID register generation")
+        st.write("- ✅ Works locally without an API key")
+        st.write("- ✅ Optional LLM enhancement with OpenAI")
+        st.write("- ✅ Input validation and error handling")
+        st.write("- ✅ Configurable risk thresholds")
+        st.write("- ✅ RAID register generation")
 
         st.divider()
-        st.subheader("How to use")
+        st.subheader("📋 How to use")
         st.write("1. Fill in project metrics on the left")
-        st.write("2. Click Generate Delivery Insight")
+        st.write("2. Click 'Generate Delivery Insight'")
         st.write("3. Review risk analysis and recommendations")
         st.write("4. Download analysis as JSON for reports")
 
         st.divider()
-        st.subheader("LLM Configuration, optional")
+        st.subheader("🔑 LLM Configuration, Optional")
         st.write("Set these environment variables to enable AI enhancement:")
         st.code(
             "export OPENAI_API_KEY='your-key-here'\nexport MODEL_NAME='gpt-4o-mini'",
@@ -522,7 +585,7 @@ def main() -> None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Project Basics")
+        st.subheader("📊 Project Basics")
         project_name = st.text_input(
             "Project name *",
             value="Enterprise Cloud Migration",
@@ -531,9 +594,13 @@ def main() -> None:
         domain = st.selectbox("Domain *", DOMAINS, key="domain")
         progress = st.slider("Delivery progress (%)", 0, 100, 55, key="progress")
         budget_utilization = st.slider("Budget utilized (%)", 0, 150, 78, key="budget")
-        go_live_date = st.date_input("Target go-live date *", key="go_live_date")
+        go_live_date = st.date_input(
+            "Target go-live date *",
+            value=date.today(),
+            key="go_live_date",
+        )
 
-        st.subheader("Stakeholder Status")
+        st.subheader("👥 Stakeholder Status")
         stakeholder_status = st.selectbox(
             "Stakeholder confidence *",
             STAKEHOLDER_OPTIONS,
@@ -546,7 +613,7 @@ def main() -> None:
         )
 
     with col2:
-        st.subheader("Risk Indicators")
+        st.subheader("⚠️ Risk Indicators")
         risks_count = st.number_input("Open risks", 0, 50, 4, key="risks_count")
         blockers_count = st.number_input("Open blockers", 0, 50, 2, key="blockers_count")
         scope_changes = st.number_input("Scope changes", 0, 50, 2, key="scope_changes")
@@ -556,7 +623,7 @@ def main() -> None:
             key="top_risk",
         )
 
-        st.subheader("Detailed Issues")
+        st.subheader("📝 Detailed Issues")
         risks_text = st.text_area(
             "Key risks, one per line *",
             value="- Vendor delivery delay\n- Test environment instability\n- Scope creep from late change requests",
@@ -603,14 +670,14 @@ def main() -> None:
             m3.metric("Progress", f"{data['progress']}%", delta=f"{100 - data['progress']}% remaining")
             m4.metric("Budget Used", f"{data['budget_utilization']}%")
 
-            st.subheader("Executive Summary")
+            st.subheader("📋 Executive Summary")
             st.info(local_result["executive_summary"])
 
-            st.subheader("Recommended Actions")
+            st.subheader("✅ Recommended Actions")
             for action in local_result["recommended_actions"]:
-                st.write(f"- {action}")
+                st.write(action)
 
-            st.subheader("Draft RAID Register")
+            st.subheader("🛡️ Draft RAID Register")
             if local_result["raid_register"]:
                 st.dataframe(
                     local_result["raid_register"],
@@ -620,12 +687,12 @@ def main() -> None:
             else:
                 st.warning("No risks or blockers provided for RAID register")
 
-            if llm_result:
+            if llm_result is not None:
                 st.divider()
-                st.subheader("AI Enhancement, LLM")
+                st.subheader("🤖 AI Enhancement, LLM")
 
                 if "error" in llm_result:
-                    st.warning(f"LLM call failed: {llm_result['error']}")
+                    st.warning(f"⚠️ LLM call failed: {llm_result['error']}")
                 else:
                     st.write("**CXO Update:**")
                     st.write(llm_result.get("cxo_update", ""))
@@ -656,15 +723,15 @@ def main() -> None:
                 use_container_width=True,
             )
 
-        except ValueError as exc:
-            st.error(f"Input validation failed: {exc}")
-            logger.error("Validation error: %s", exc)
-        except Exception as exc:
-            st.error(f"Analysis failed: {exc}")
-            logger.error("Unexpected error during analysis: %s", exc)
+        except ValueError as e:
+            st.error(f"❌ Input validation failed: {str(e)}")
+            logger.error("Validation error: %s", e)
+        except Exception as e:
+            st.error(f"❌ Analysis failed: {str(e)}")
+            logger.exception("Unexpected error during analysis")
 
     st.divider()
-    st.subheader("Interview Talking Points")
+    st.subheader("💡 Interview Talking Points")
     st.write(
         """
 **Problem:** Delivery managers spend hours on manual risk assessment and reporting.
@@ -688,12 +755,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-'''
-
-requirements = "streamlit\nopenai\n"
-
-base = Path("/mnt/data")
-(base / "app_fixed.py").write_text(clean_code, encoding="utf-8")
-(base / "requirements_fixed.txt").write_text(requirements, encoding="utf-8")
-print("/mnt/data/app_fixed.py")
-print("/mnt/data/requirements_fixed.txt")
