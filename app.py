@@ -51,9 +51,10 @@ TESTING_OPTIONS = ["Yes", "No"]
 # INPUT VALIDATION
 # ============================================================================
 
-def validate_project_data(data: dict) -> tuple[bool, str]:
-"""
-Validate input data before processing.
+def validate_project_data(data: dict):
+    """
+    Validate input data before processing.
+    """
 
 Args:
 data (dict): Input data dictionary containing project metrics
