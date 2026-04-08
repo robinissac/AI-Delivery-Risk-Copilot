@@ -1,4 +1,4 @@
- """
+"""
 AI Delivery Risk Copilot - Version 2
 Improved version with validation, logging, docstrings, and better error handling.
 """
