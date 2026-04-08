@@ -465,7 +465,9 @@ Returns dict with 'error' key if API call fails.
 
 Note:
 Requires OPENAI_API_KEY environment variable.
+"""
 Optional MODEL_NAME environment variable (defaults to gpt-4o-mini).
+"""
 """
 api_key = os.getenv("OPENAI_API_KEY", "").strip()
 model = os.getenv("MODEL_NAME", "gpt-4o-mini").strip()
